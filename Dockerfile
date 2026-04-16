@@ -1,12 +1,17 @@
-"name": "wa-checker-bot",
-  "version": "1.0.0",
-  "main": "index.js",
-  "dependencies": {
-    "telegraf": "^4.12.0",
-    "whatsapp-web.js": "latest",
-    "qrcode": "^1.5.3"
-  },
-  "scripts": {
-    "start": "node index.js"
-  }
-}
+FROM node:18
+
+RUN apt-get update && apt-get install -y \
+    chromium \
+    fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 \
+    --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+
+CMD [ "npm", "start" ]
+```
