@@ -1,7 +1,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { Telegraf, Markup } = require('telegraf');
 
-const BOT_TOKEN = '8635650479:AAEU8UCfEZWkpDkw7ZKhavyod-ogY3t7hmc';
+const BOT_TOKEN = '8635650479:AAE9CFJEuYAhDL6lMlShZT23fTAWLz9CnDU';
 const ADMIN_ID = '7414899469';
 
 const bot = new Telegraf(BOT_TOKEN);
