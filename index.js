@@ -7,7 +7,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = '7414899469';
 
 if (!BOT_TOKEN) {
-    console.error('❌ BOT_TOKEN not found');
+    console.error('BOT_TOKEN missing');
     process.exit(1);
 }
 
@@ -37,6 +37,7 @@ const client = new Client({
 
 let users = new Set();
 let waitingForPhone = false;
+let waReady = false;
 
 function cleanPhoneNumber(input = '') {
     return String(input).replace(/[^\d]/g, '');
@@ -69,39 +70,25 @@ function adminMenu() {
     ]).resize();
 }
 
-client.on('loading_screen', (percent, message) => {
-    console.log(`Loading... ${percent}% ${message}`);
-});
-
-client.on('qr', () => {
-    console.log('QR event received');
-});
-
-client.on('code', (code) => {
-    console.log('Pairing code event:', code);
-});
-
 client.on('authenticated', () => {
     console.log('✅ WhatsApp authenticated');
 });
 
 client.on('ready', async () => {
+    waReady = true;
     console.log('✅ WhatsApp Client Ready!');
     try {
-        await bot.telegram.sendMessage(
-            ADMIN_ID,
-            '✅ WhatsApp connected successfully!'
-        );
-    } catch (err) {
-        console.error('Admin notify failed:', err.message);
-    }
+        await bot.telegram.sendMessage(ADMIN_ID, '✅ WhatsApp connected successfully!');
+    } catch (e) {}
 });
 
 client.on('auth_failure', (msg) => {
+    waReady = false;
     console.error('❌ Auth failure:', msg);
 });
 
 client.on('disconnected', (reason) => {
+    waReady = false;
     console.log('⚠️ WhatsApp disconnected:', reason);
 });
 
@@ -133,12 +120,7 @@ bot.on('text', async (ctx) => {
 
     if (userId === ADMIN_ID) {
         if (text === '🔌 WA Status') {
-            try {
-                const state = await client.getState();
-                return ctx.reply(`📡 WhatsApp Status: ${state}`);
-            } catch (err) {
-                return ctx.reply('❌ WhatsApp Status: Disconnected');
-            }
+            return ctx.reply(waReady ? '✅ WhatsApp Ready' : '❌ WhatsApp Not Ready');
         }
 
         if (text === '👥 User Count') {
@@ -146,10 +128,11 @@ bot.on('text', async (ctx) => {
         }
 
         if (text === '🔑 Link Account') {
+            if (!waReady) {
+                return ctx.reply('❌ WhatsApp client not ready yet.');
+            }
             waitingForPhone = true;
-            return ctx.reply(
-                '📲 Send your WhatsApp number with country code.\n\nExamples:\n+8801700000000\n+919876543210\n+12025550108'
-            );
+            return ctx.reply('📲 Send your WhatsApp number with country code.\nExample: +8801700000000');
         }
     }
 
@@ -157,40 +140,30 @@ bot.on('text', async (ctx) => {
         const phoneNumber = cleanPhoneNumber(text);
 
         if (!isValidPhoneNumber(phoneNumber)) {
-            return ctx.reply(
-                '❌ Invalid number format.\nSend a valid number with country code.\nExample: +8801700000000'
-            );
+            return ctx.reply('❌ Invalid number format.');
         }
 
         waitingForPhone = false;
 
+        if (!waReady) {
+            return ctx.reply('❌ WhatsApp client not ready.');
+        }
+
         try {
             const code = await client.requestPairingCode(phoneNumber);
-
-            return ctx.reply(
-                `🔑 Pairing Code: ${code}\n\n📌 Use it in WhatsApp:\n1. Open WhatsApp\n2. Linked Devices\n3. Link with phone number instead\n4. Enter this code`,
-                mainMenu(userId)
-            );
+            return ctx.reply(`🔑 Pairing Code: ${code}`, mainMenu(userId));
         } catch (err) {
             console.error('Pairing error:', err);
-            return ctx.reply(
-                '❌ Failed to get pairing code.\nMake sure WhatsApp client is ready and try again.',
-                mainMenu(userId)
-            );
+            return ctx.reply('❌ Failed to get pairing code.', mainMenu(userId));
         }
     }
 
     if (text === '🔍 Check Number') {
-        return ctx.reply(
-            '📲 Send the number you want to check.\n\nExamples:\n+8801700000000\n+919876543210\n+12025550108'
-        );
+        return ctx.reply('📲 Send the number to check.\nExample: +8801700000000');
     }
 
     if (text === '📖 How to Use') {
-        return ctx.reply(
-            '1️⃣ Click "Check Number"\n2️⃣ Send number with country code\n3️⃣ Bot will tell you whether it is on WhatsApp',
-            mainMenu(userId)
-        );
+        return ctx.reply('1️⃣ Click Check Number\n2️⃣ Send number with country code\n3️⃣ Get result', mainMenu(userId));
     }
 
     if (text === '👤 Support') {
@@ -200,59 +173,54 @@ bot.on('text', async (ctx) => {
     const cleaned = cleanPhoneNumber(text);
 
     if (isValidPhoneNumber(cleaned)) {
+        if (!waReady) {
+            return ctx.reply('❌ WhatsApp client not ready now. Try again later.', mainMenu(userId));
+        }
+
         try {
             const jid = `${cleaned}@c.us`;
             const isRegistered = await client.isRegisteredUser(jid);
 
-            if (isRegistered) {
-                return ctx.reply(
-                    `✅ This number is registered on WhatsApp.\n📱 Number: +${cleaned}`,
-                    mainMenu(userId)
-                );
-            } else {
-                return ctx.reply(
-                    `❌ This number is NOT registered on WhatsApp.\n📱 Number: +${cleaned}`,
-                    mainMenu(userId)
-                );
-            }
-        } catch (err) {
-            console.error('Check number error:', err);
             return ctx.reply(
-                '⚠️ System error. Please try again later.',
+                isRegistered
+                    ? `✅ This number is registered on WhatsApp.\n📱 Number: +${cleaned}`
+                    : `❌ This number is NOT registered on WhatsApp.\n📱 Number: +${cleaned}`,
                 mainMenu(userId)
             );
+        } catch (err) {
+            console.error('Check number error:', err);
+            return ctx.reply('⚠️ System error. Please try again later.', mainMenu(userId));
         }
     }
 
-    return ctx.reply(
-        '⚠️ Please use the menu or send a valid number with country code.\nExample: +8801700000000',
-        mainMenu(userId)
-    );
+    return ctx.reply('⚠️ Please use the menu or send a valid number with country code.', mainMenu(userId));
 });
 
 (async () => {
     try {
-        await client.initialize();
         await bot.launch();
         console.log('🤖 Telegram bot started');
     } catch (err) {
-        console.error('Startup error:', err);
+        console.error('Bot launch error:', err);
         process.exit(1);
+    }
+
+    try {
+        await client.initialize();
+    } catch (err) {
+        waReady = false;
+        console.error('WhatsApp init error:', err);
     }
 })();
 
 process.once('SIGINT', async () => {
-    try {
-        await bot.stop('SIGINT');
-        await client.destroy();
-    } catch (e) {}
+    try { await bot.stop('SIGINT'); } catch (e) {}
+    try { await client.destroy(); } catch (e) {}
     process.exit(0);
 });
 
 process.once('SIGTERM', async () => {
-    try {
-        await bot.stop('SIGTERM');
-        await client.destroy();
-    } catch (e) {}
+    try { await bot.stop('SIGTERM'); } catch (e) {}
+    try { await client.destroy(); } catch (e) {}
     process.exit(0);
 });
