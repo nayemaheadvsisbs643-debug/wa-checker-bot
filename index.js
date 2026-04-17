@@ -7,22 +7,31 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = '7414899469';
 
 if (!BOT_TOKEN) {
-    console.error('❌ BOT_TOKEN not found in .env');
+    console.error('❌ BOT_TOKEN not found');
     process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
 
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({
+        clientId: 'main-session'
+    }),
     puppeteer: {
+        headless: true,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--no-zygote',
+            '--single-process'
         ]
+    },
+    webVersionCache: {
+        type: 'remote'
     }
 });
 
@@ -60,6 +69,22 @@ function adminMenu() {
     ]).resize();
 }
 
+client.on('loading_screen', (percent, message) => {
+    console.log(`Loading... ${percent}% ${message}`);
+});
+
+client.on('qr', () => {
+    console.log('QR event received');
+});
+
+client.on('code', (code) => {
+    console.log('Pairing code event:', code);
+});
+
+client.on('authenticated', () => {
+    console.log('✅ WhatsApp authenticated');
+});
+
 client.on('ready', async () => {
     console.log('✅ WhatsApp Client Ready!');
     try {
@@ -68,12 +93,8 @@ client.on('ready', async () => {
             '✅ WhatsApp connected successfully!'
         );
     } catch (err) {
-        console.error('Failed to notify admin:', err.message);
+        console.error('Admin notify failed:', err.message);
     }
-});
-
-client.on('authenticated', () => {
-    console.log('✅ WhatsApp authenticated');
 });
 
 client.on('auth_failure', (msg) => {
@@ -153,7 +174,7 @@ bot.on('text', async (ctx) => {
         } catch (err) {
             console.error('Pairing error:', err);
             return ctx.reply(
-                '❌ Failed to get pairing code.\nMake sure WhatsApp client is running and try again.',
+                '❌ Failed to get pairing code.\nMake sure WhatsApp client is ready and try again.',
                 mainMenu(userId)
             );
         }
@@ -209,15 +230,16 @@ bot.on('text', async (ctx) => {
     );
 });
 
-client.initialize();
-
-bot.launch()
-    .then(() => {
+(async () => {
+    try {
+        await client.initialize();
+        await bot.launch();
         console.log('🤖 Telegram bot started');
-    })
-    .catch((err) => {
-        console.error('Bot launch error:', err);
-    });
+    } catch (err) {
+        console.error('Startup error:', err);
+        process.exit(1);
+    }
+})();
 
 process.once('SIGINT', async () => {
     try {
